@@ -1,13 +1,16 @@
 import nltk
 import random
 from nltk.corpus import shakespeare
-from nltk.tokenize import RegexpTokenizer
+from nltk.tokenize import RegexpTokenizer, sent_tokenize
 from xml.etree import ElementTree
 from collections import defaultdict
 from nltk.util import ngrams
 
 #Downloading the text
 nltk.download('shakespeare')
+nltk.download('punkt')
+nltk.download('punkt_tab')
+
 
 #Extracting the play according to the nltk official site
 play_name = 'hamlet.xml'  
@@ -20,10 +23,12 @@ def extract_text(play):
 
 text = extract_text(play)
 
+sentences = sent_tokenize(text)
+
 #Lowercase and no punctuation using RegexpTokenizer
-def preprocess_text(text):
+def preprocess_text(sentence):
     tokenizer = RegexpTokenizer(r'\w+')
-    tokens = tokenizer.tokenize(text.lower())
+    tokens = tokenizer.tokenize(sentence.lower())
     return tokens
 
 #Printing the first 50 tokens as an example
@@ -31,14 +36,28 @@ tokens = preprocess_text(text)
 print("\nSample:", tokens[:50])  
 
 #Generating ngram counts. It is an ngram function so the model can be used for tri-grams and quad-grams as well
-def generate_ngram_counts(tokens, n):
+def generate_ngram_counts(sentences, n):
     ngram_counts = defaultdict(lambda: defaultdict(int))
-    
-    for ngram in ngrams(tokens, n):
-        prefix, next_word = tuple(ngram[:-1]), ngram[-1]
-        ngram_counts[prefix][next_word] += 1
-    
-    return ngram_counts
+    sentence_starts = []  # Store the first (n-1)-grams of sentences
+
+    for sentence in sentences:
+        tokens = preprocess_text(sentence)  # Ensure tokenization
+        
+        if len(tokens) < n:  # Skip short sentences
+            continue
+
+        first_ngram = tuple(tokens[:n-1])  # Store first (n-1)-gram as sentence starter
+        sentence_starts.append(first_ngram)
+
+        # Generate proper n-grams
+        for i in range(len(tokens) - (n - 1)):  
+            prefix = tuple(tokens[i:i + n - 1])  # Extract (n-1) prefix
+            next_word = tokens[i + n - 1]  # Get next word
+            ngram_counts[prefix][next_word] += 1  # Store n-gram correctly
+
+    return ngram_counts, sentence_starts
+
+
 
 #Computing probabilities of next token given the prefix
 def compute_probabilities(ngram_counts):
@@ -55,49 +74,67 @@ def get_next_token(prefix, ngram_probs):
     if prefix in ngram_probs:
         next_words, probabilities = zip(*ngram_probs[prefix].items())
         return random.choices(next_words, probabilities)[0]
-    else:
-        # Fallback: Choose a high-frequency n-gram start instead of a random word
-        return random.choice(list(ngram_probs.keys()))[0]
+    return None  #No next word available
 
+#Selecting a random sentence-starting n-gram
+def get_random_sentence_start(sentence_starts, ngram_counts):
+    if sentence_starts:
+        return random.choice(sentence_starts) 
+    elif ngram_counts:
+        return random.choice(list(ngram_counts.keys()))  #Fallback to a random valid n-gram
+    return None  
 
-#Selecting a frequent ngram to generate better sentences
-def get_frequent_start_ngram(ngram_counts):
-    if not ngram_counts:
-        return None
-    
-    common_ngrams = sorted(ngram_counts.keys(), key=lambda k: sum(ngram_counts[k].values()), reverse=True)
-    return random.choice(common_ngrams[:50])
-
-#Generating text
-def generate_text(initial_ngram, ngram_probs, num_words):
+#Generating text ensuring complete sentences
+def generate_sentence(initial_ngram, ngram_probs, max_words=50):
     if not initial_ngram:
         return "Error: No valid starting n-gram found."
-    
+
     current_ngram = initial_ngram
     generated_text = list(initial_ngram)
-    
-    for _ in range(num_words - len(initial_ngram)):
+
+    for _ in range(max_words - len(initial_ngram)):
         next_word = get_next_token(current_ngram, ngram_probs)
         if not next_word:
+            generated_text.append(".")  # Ensure sentence ends properly
             break
-        
+
         generated_text.append(next_word)
         current_ngram = tuple(generated_text[-(len(initial_ngram)):])  # Shift n-gram window
+
+    generated_text[0] = generated_text[0].capitalize()  # Capitalize first word
+    if not generated_text[-1].endswith("."):
+        generated_text.append(".")  # Add a full stop if it’s missing
     
     return ' '.join(generated_text)
 
+    
+    # Ensure the first word is capitalized
+    generated_text[0] = generated_text[0].capitalize()
+    return ' '.join(generated_text)
 
-#Generating for bigram, trigram and quadgram
-bigram_counts = generate_ngram_counts(tokens, 2)
+
+# Generating n-grams per sentence
+bigram_counts, bigram_starts = generate_ngram_counts(sentences, 2)
 bigram_probs = compute_probabilities(bigram_counts)
 
-trigram_counts = generate_ngram_counts(tokens, 3)
+trigram_counts, trigram_starts = generate_ngram_counts(sentences, 3)
 trigram_probs = compute_probabilities(trigram_counts)
 
-quadgram_counts = generate_ngram_counts(tokens, 4)
+quadgram_counts, quadgram_starts = generate_ngram_counts(sentences, 4)
 quadgram_probs = compute_probabilities(quadgram_counts)
 
-#Example of generated text
-print("\nGenerated Text (Bigram):", generate_text(('to', 'be'), bigram_probs, 50))
-print("\nGenerated Text (Trigram):", generate_text(('to', 'be', 'or'), trigram_probs, 50))
-print("\nGenerated Text (Quadgram):", generate_text(('to', 'be', 'or', 'not'), quadgram_probs, 50))
+# Generate and print 5 sentences for each n-gram model
+print("\nGenerated Sentences (Bigram):")
+for _ in range(5):
+    initial_bigram = get_random_sentence_start(bigram_starts, bigram_counts)
+    print(generate_sentence(initial_bigram, bigram_probs))
+
+print("\nGenerated Sentences (Trigram):")
+for _ in range(5):
+    initial_trigram = get_random_sentence_start(trigram_starts, trigram_counts)
+    print(generate_sentence(initial_trigram, trigram_probs))
+
+print("\nGenerated Sentences (Quadgram):")
+for _ in range(5):
+    initial_quadgram = get_random_sentence_start(quadgram_starts, quadgram_counts)
+    print(generate_sentence(initial_quadgram, quadgram_probs))
