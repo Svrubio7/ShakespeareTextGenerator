@@ -81,4 +81,4 @@ This runs all unit tests and provides debugging output for **n-gram storage.**
 
 
 ## Author
-Your Name - [Your GitHub](https://github.com/Svrubio7)
+Sergio Verdugo - [Svrubio7](https://github.com/Svrubio7)
